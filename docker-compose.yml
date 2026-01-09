@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: nolzago_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-nolzago}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build: .
+    container_name: nolzago_backend
+    depends_on:
+      - db
+    environment:
+      # NOLZAGO_* envs can be provided via .env file
+      NOLZAGO_DATABASE_URL: ${NOLZAGO_DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/nolzago}
+      NOLZAGO_SECRET_KEY: ${NOLZAGO_SECRET_KEY:-change-me}
+      NOLZAGO_ALLOWED_HOSTS: ${NOLZAGO_ALLOWED_HOSTS:-["*"]}
+      NOLZAGO_DEBUG: ${NOLZAGO_DEBUG:-false}
+      NOLZAGO_KAKAO_REST_API_KEY: ${NOLZAGO_KAKAO_REST_API_KEY:-}
+      NOLZAGO_KAKAO_MAP_REST_API_KEY: ${NOLZAGO_KAKAO_MAP_REST_API_KEY:-}
+      NOLZAGO_GEMINI_API_KEY: ${NOLZAGO_GEMINI_API_KEY:-}
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+
+volumes:
+  db_data:

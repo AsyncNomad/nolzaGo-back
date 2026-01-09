@@ -28,6 +28,14 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
+### Docker 실행
+```bash
+docker-compose up --build
+```
+- 백엔드: http://localhost:8000
+- DB: postgres:15-alpine (포트 5432 매핑). 컨테이너 내부 DB URL 예: `postgresql+asyncpg://postgres:postgres@db:5432/nolzago`
+- `.env`에 설정한 `NOLZAGO_*` 값이 자동 주입됩니다.
+
 ## API 개요
 - `GET /api/v1/health` 헬스체크
 - 인증
