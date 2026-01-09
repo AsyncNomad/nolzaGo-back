@@ -1,0 +1,208 @@
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.api.deps import get_async_db, get_current_user
+from app.models.post import Post
+from app.schemas.post import PostCreate, PostOut, PostUpdate
+
+router = APIRouter(prefix="/posts", tags=["posts"])
+
+
+@router.get("/", response_model=list[PostOut])
+async def list_posts(db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(select(Post).options(selectinload(Post.participants), selectinload(Post.owner)))
+    posts = result.scalars().unique().all()
+    return [
+        PostOut(
+            id=post.id,
+            created_at=post.created_at,
+            title=post.title,
+            game_type=post.game_type,
+            description=post.description,
+            location_name=post.location_name,
+            latitude=post.latitude,
+            longitude=post.longitude,
+            max_participants=post.max_participants,
+            start_time=post.start_time,
+            owner_id=post.owner_id,
+            participants_count=len(post.participants),
+            owner=post.owner,
+        )
+        for post in posts
+    ]
+
+
+@router.post("/", response_model=PostOut, status_code=status.HTTP_201_CREATED)
+async def create_post(
+    payload: PostCreate, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)
+):
+    post = Post(
+        title=payload.title,
+        description=payload.description,
+        location_name=payload.location_name,
+        latitude=payload.latitude,
+        longitude=payload.longitude,
+        game_type=payload.game_type,
+        max_participants=payload.max_participants,
+        start_time=payload.start_time,
+        owner_id=current_user.id,
+    )
+    db.add(post)
+    await db.commit()
+    await db.refresh(post)
+    return PostOut(
+        id=post.id,
+        created_at=post.created_at,
+        title=post.title,
+        game_type=post.game_type,
+        description=post.description,
+        location_name=post.location_name,
+        latitude=post.latitude,
+        longitude=post.longitude,
+        max_participants=post.max_participants,
+        start_time=post.start_time,
+        owner_id=post.owner_id,
+        participants_count=0,
+        owner=current_user,
+    )
+
+
+@router.post("/{post_id}/leave", response_model=PostOut)
+async def leave_post(
+    post_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)
+):
+    result = await db.execute(
+        select(Post).where(Post.id == post_id).options(selectinload(Post.participants), selectinload(Post.owner))
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    if current_user == post.owner:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="작성자는 나갈 수 없습니다")
+    if current_user not in post.participants:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="참여 중이 아닙니다")
+
+    post.participants.remove(current_user)
+    await db.commit()
+    await db.refresh(post)
+
+    return PostOut(
+        id=post.id,
+        created_at=post.created_at,
+        title=post.title,
+        game_type=post.game_type,
+        description=post.description,
+        location_name=post.location_name,
+        latitude=post.latitude,
+        longitude=post.longitude,
+        max_participants=post.max_participants,
+        start_time=post.start_time,
+        owner_id=post.owner_id,
+        participants_count=len(post.participants),
+        owner=post.owner,
+    )
+
+@router.get("/{post_id}", response_model=PostOut)
+async def get_post(post_id: UUID, db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(
+        select(Post).where(Post.id == post_id).options(selectinload(Post.participants), selectinload(Post.owner))
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    return PostOut(
+        id=post.id,
+        created_at=post.created_at,
+        title=post.title,
+        game_type=post.game_type,
+        description=post.description,
+        location_name=post.location_name,
+        latitude=post.latitude,
+        longitude=post.longitude,
+        max_participants=post.max_participants,
+        start_time=post.start_time,
+        owner_id=post.owner_id,
+        participants_count=len(post.participants),
+        owner=post.owner,
+    )
+
+
+@router.patch("/{post_id}", response_model=PostOut)
+async def update_post(
+    post_id: UUID,
+    payload: PostUpdate,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Post).where(Post.id == post_id).options(selectinload(Post.participants), selectinload(Post.owner))
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+    if post.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only author can edit this post")
+
+    for field, value in payload.dict(exclude_unset=True).items():
+        setattr(post, field, value)
+
+    await db.commit()
+    await db.refresh(post)
+    return PostOut(
+        id=post.id,
+        created_at=post.created_at,
+        title=post.title,
+        game_type=post.game_type,
+        description=post.description,
+        location_name=post.location_name,
+        latitude=post.latitude,
+        longitude=post.longitude,
+        max_participants=post.max_participants,
+        start_time=post.start_time,
+        owner_id=post.owner_id,
+        participants_count=len(post.participants),
+        owner=post.owner,
+    )
+
+
+@router.post("/{post_id}/join", response_model=PostOut)
+async def join_post(
+    post_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)
+):
+    result = await db.execute(
+        select(Post).where(Post.id == post_id).options(selectinload(Post.participants), selectinload(Post.owner))
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    if current_user in post.participants:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Already joined")
+
+    if len(post.participants) >= post.max_participants:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group is full")
+
+    post.participants.append(current_user)
+    await db.commit()
+    await db.refresh(post)
+
+    return PostOut(
+        id=post.id,
+        created_at=post.created_at,
+        title=post.title,
+        game_type=post.game_type,
+        description=post.description,
+        location_name=post.location_name,
+        latitude=post.latitude,
+        longitude=post.longitude,
+        max_participants=post.max_participants,
+        start_time=post.start_time,
+        owner_id=post.owner_id,
+        participants_count=len(post.participants),
+        owner=post.owner,
+    )
