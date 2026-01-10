@@ -25,14 +25,14 @@ cp .env.example .env
 - `NOLZAGO_GEMINI_API_KEY`: Gemini 요약용 API 키(없으면 기본 안내 문구 반환)
 3) 서버 실행
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ### Docker 실행
 ```bash
 docker-compose up --build
 ```
-- 백엔드: http://localhost:8000
+- 백엔드: http://localhost:8001
 - DB: postgres:15-alpine (포트 5432 매핑). 컨테이너 내부 DB URL 예: `postgresql+asyncpg://postgres:postgres@db:5432/nolzago`
 - `.env`에 설정한 `NOLZAGO_*` 값이 자동 주입됩니다.
 
@@ -49,11 +49,18 @@ docker-compose up --build
   - `PATCH /api/v1/posts/{id}` 모집글 수정(작성자만)
   - `POST /api/v1/posts/{id}/join` 모집글 참가
   - `POST /api/v1/posts/{id}/leave` 모집글 참가 취소(참여자용)
+  - `POST /api/v1/posts/{id}/like` 좋아요 카운트 증가
 - 채팅
   - `GET /api/v1/posts/{id}/chat/messages` 메시지 조회
   - `POST /api/v1/posts/{id}/chat/messages` 메시지 작성(참여자만)
   - `GET /api/v1/posts/{id}/chat/summary` Gemini 기반 3줄 요약(키 없으면 기본 문구, `question` 쿼리로 질문 동시 전달 가능)
   - `WS /api/v1/posts/{id}/chat/ws?token=JWT` 단체 채팅방 WebSocket. `POST /posts/{id}/join` 이후 JWT로 연결하면 브로드캐스트·DB 저장. 클라이언트가 연결 종료 시 방 나가기.
+- 추억 공유
+  - `GET /api/v1/memories` 추억글 목록
+  - `POST /api/v1/memories` 추억글 작성(인증 필요)
+  - `GET /api/v1/memories/{id}` 추억글 상세
+  - `PATCH /api/v1/memories/{id}` 추억글 수정(작성자만)
+  - `POST /api/v1/memories/{id}/like` 좋아요 카운트 증가
 - 지도
   - `GET /api/v1/maps/geocode?query=주소` 카카오맵 REST API로 좌표 조회
 

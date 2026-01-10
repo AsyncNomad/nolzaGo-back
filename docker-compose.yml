@@ -28,8 +28,8 @@ services:
       NOLZAGO_KAKAO_MAP_REST_API_KEY: ${NOLZAGO_KAKAO_MAP_REST_API_KEY:-}
       NOLZAGO_GEMINI_API_KEY: ${NOLZAGO_GEMINI_API_KEY:-}
     ports:
-      - "8000:8000"
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+      - "8001:8001"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
     restart: unless-stopped
 
 volumes:

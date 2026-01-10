@@ -16,6 +16,7 @@ class PostBase(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     max_participants: int = Field(default=4, ge=2, le=50)
     start_time: datetime | None = None
+    like_count: int = 0
 
 
 class PostCreate(PostBase):
@@ -30,6 +31,7 @@ class PostUpdate(BaseModel):
     longitude: float | None = Field(default=None, ge=-180, le=180)
     max_participants: int | None = Field(default=None, ge=2, le=50)
     start_time: datetime | None = None
+    like_count: int | None = None
 
 
 class PostOut(DBModelMixin):
@@ -44,3 +46,4 @@ class PostOut(DBModelMixin):
     owner_id: UUID
     participants_count: int
     owner: UserOut | None
+    like_count: int

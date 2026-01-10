@@ -31,6 +31,7 @@ async def list_posts(db: AsyncSession = Depends(get_async_db)):
             owner_id=post.owner_id,
             participants_count=len(post.participants),
             owner=post.owner,
+            like_count=post.like_count,
         )
         for post in posts
     ]
@@ -50,6 +51,7 @@ async def create_post(
         max_participants=payload.max_participants,
         start_time=payload.start_time,
         owner_id=current_user.id,
+        like_count=payload.like_count or 0,
     )
     db.add(post)
     await db.commit()
@@ -68,6 +70,7 @@ async def create_post(
         owner_id=post.owner_id,
         participants_count=0,
         owner=current_user,
+        like_count=post.like_count,
     )
 
 
@@ -104,6 +107,7 @@ async def leave_post(
         owner_id=post.owner_id,
         participants_count=len(post.participants),
         owner=post.owner,
+        like_count=post.like_count,
     )
 
 @router.get("/{post_id}", response_model=PostOut)
@@ -129,6 +133,7 @@ async def get_post(post_id: UUID, db: AsyncSession = Depends(get_async_db)):
         owner_id=post.owner_id,
         participants_count=len(post.participants),
         owner=post.owner,
+        like_count=post.like_count,
     )
 
 
@@ -167,6 +172,7 @@ async def update_post(
         owner_id=post.owner_id,
         participants_count=len(post.participants),
         owner=post.owner,
+        like_count=post.like_count,
     )
 
 
@@ -205,4 +211,36 @@ async def join_post(
         owner_id=post.owner_id,
         participants_count=len(post.participants),
         owner=post.owner,
+        like_count=post.like_count,
+    )
+
+
+@router.post("/{post_id}/like", response_model=PostOut)
+async def like_post(post_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
+    result = await db.execute(
+        select(Post).where(Post.id == post_id).options(selectinload(Post.participants), selectinload(Post.owner))
+    )
+    post = result.scalar_one_or_none()
+    if not post:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+
+    post.like_count += 1
+    await db.commit()
+    await db.refresh(post)
+
+    return PostOut(
+        id=post.id,
+        created_at=post.created_at,
+        title=post.title,
+        game_type=post.game_type,
+        description=post.description,
+        location_name=post.location_name,
+        latitude=post.latitude,
+        longitude=post.longitude,
+        max_participants=post.max_participants,
+        start_time=post.start_time,
+        owner_id=post.owner_id,
+        participants_count=len(post.participants),
+        owner=post.owner,
+        like_count=post.like_count,
     )

@@ -21,6 +21,7 @@ class Post(Base):
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_participants: Mapped[int] = mapped_column(Integer, default=4)
+    like_count: Mapped[int] = mapped_column(Integer, default=0)
     start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     owner_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
