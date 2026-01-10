@@ -9,6 +9,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.models.associations import post_participants
 
+POST_STATUS_CHOICES = ("모집 중", "모집 마감", "놀이 진행 중", "종료")
+
 
 class Post(Base):
     __tablename__ = "posts"
@@ -22,6 +24,7 @@ class Post(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_participants: Mapped[int] = mapped_column(Integer, default=4)
     like_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="모집 중")
     start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     owner_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

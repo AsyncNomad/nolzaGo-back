@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 from app.schemas.common import DBModelMixin
 from app.schemas.user import UserOut
 
+POST_STATUS_CHOICES = ("모집 중", "모집 마감", "놀이 진행 중", "종료")
+
 
 class PostBase(BaseModel):
     title: str = Field(max_length=255)
@@ -17,6 +19,7 @@ class PostBase(BaseModel):
     max_participants: int = Field(default=4, ge=2, le=50)
     start_time: datetime | None = None
     like_count: int = 0
+    status: str = Field(default="모집 중", pattern="|".join(POST_STATUS_CHOICES))
 
 
 class PostCreate(PostBase):
@@ -32,6 +35,7 @@ class PostUpdate(BaseModel):
     max_participants: int | None = Field(default=None, ge=2, le=50)
     start_time: datetime | None = None
     like_count: int | None = None
+    status: str | None = Field(default=None, pattern="|".join(POST_STATUS_CHOICES))
 
 
 class PostOut(DBModelMixin):
@@ -42,6 +46,7 @@ class PostOut(DBModelMixin):
     latitude: float | None
     longitude: float | None
     max_participants: int
+    status: str
     start_time: datetime | None
     owner_id: UUID
     participants_count: int

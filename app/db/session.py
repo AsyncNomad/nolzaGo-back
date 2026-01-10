@@ -18,6 +18,12 @@ async def init_models() -> None:
             await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR"))
         except Exception as exc:  # pragma: no cover
             print(f"[init_models] alter users.profile_image_url skipped/failed: {exc}")
+        try:
+            await conn.execute(
+                text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT '모집 중'")
+            )
+        except Exception as exc:  # pragma: no cover
+            print(f"[init_models] alter posts.status skipped/failed: {exc}")
 
 
 async def get_db():

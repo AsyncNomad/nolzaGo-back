@@ -23,7 +23,7 @@ class User(Base):
     hashed_password: Mapped[str | None] = mapped_column(String, nullable=True)
     provider: Mapped[AuthProvider] = mapped_column(Enum(AuthProvider), nullable=False, default=AuthProvider.local)
     provider_account_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    display_name: Mapped[str] = mapped_column(String, default="놀자Go 사용자")
+    display_name: Mapped[str] = mapped_column(String, unique=True, default="놀자Go 사용자")
     profile_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
     location_name: Mapped[str | None] = mapped_column(String, nullable=True)

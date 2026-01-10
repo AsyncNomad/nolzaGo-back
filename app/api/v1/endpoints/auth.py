@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +21,9 @@ async def signup(payload: UserCreate, db: AsyncSession = Depends(get_async_db)):
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+    nick_exists = await db.execute(select(User).where(User.display_name == payload.display_name))
+    if nick_exists.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Display name already registered")
 
     user = User(
         email=payload.email,
@@ -78,21 +81,36 @@ async def kakao_login(payload: KakaoUserCreate, db: AsyncSession = Depends(get_a
     user = result.scalar_one_or_none()
 
     if not user:
+        if not payload.location_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Location verification required before Kakao login completion",
+            )
         user = User(
             email=kakao_email,
             provider=AuthProvider.kakao,
             provider_account_id=kakao_id,
             display_name=kakao_nickname,
             profile_image_url=kakao_profile_image,
+            location_name=payload.location_name,
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
     else:
+        # 기존 사용자: 위치가 이미 저장돼 있으면 바로 로그인 허용,
+        # 없으면 위치가 넘어온 경우에만 저장 후 로그인.
+        if not user.location_name and not payload.location_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Location verification required before Kakao login completion",
+            )
         if kakao_profile_image and user.profile_image_url != kakao_profile_image:
             user.profile_image_url = kakao_profile_image
-            db.add(user)
-            await db.commit()
+        if payload.location_name and user.location_name != payload.location_name:
+            user.location_name = payload.location_name
+        db.add(user)
+        await db.commit()
 
     token = create_access_token(str(user.id))
     return {"access_token": token, "token_type": "bearer"}
@@ -101,3 +119,17 @@ async def kakao_login(payload: KakaoUserCreate, db: AsyncSession = Depends(get_a
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/check-email")
+async def check_email(email: str = Query(..., min_length=1), db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(select(User).where(User.email == email))
+    exists = result.scalar_one_or_none() is not None
+    return {"available": not exists}
+
+
+@router.get("/check-nickname")
+async def check_nickname(display_name: str = Query(..., min_length=1), db: AsyncSession = Depends(get_async_db)):
+    result = await db.execute(select(User).where(User.display_name == display_name))
+    exists = result.scalar_one_or_none() is not None
+    return {"available": not exists}

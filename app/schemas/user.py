@@ -1,13 +1,13 @@
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.user import AuthProvider
 from app.schemas.common import DBModelMixin
 
 
 class UserBase(BaseModel):
-    email: EmailStr | None = None
+    email: str | None = None
     display_name: str = Field(default="놀자Go 사용자", max_length=255)
     profile_image_url: str | None = None
     phone_number: str | None = None
@@ -17,9 +17,9 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    email: EmailStr
-    password: str = Field(min_length=6)
-    password_confirm: str = Field(min_length=6)
+    email: str
+    password: str = Field(min_length=6, max_length=72)
+    password_confirm: str = Field(min_length=6, max_length=72)
 
     @field_validator("password_confirm")
     @classmethod
@@ -33,8 +33,9 @@ class UserCreate(UserBase):
 
 class KakaoUserCreate(BaseModel):
     access_token: str = Field(min_length=1)
-    email: EmailStr | None = None
+    email: str | None = None
     display_name: str | None = None
+    location_name: str | None = None
 
 
 class UserUpdate(UserBase):
@@ -42,7 +43,7 @@ class UserUpdate(UserBase):
 
 
 class UserOut(DBModelMixin):
-    email: EmailStr | None = None
+    email: str | None = None
     display_name: str
     profile_image_url: str | None = None
     phone_number: str | None = None
