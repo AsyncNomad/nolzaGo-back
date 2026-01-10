@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     app_name: str = "nolzaGo"
     debug: bool = True
+    root_path: str = ""
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/nolzago"
     secret_key: str = "change-me"
     access_token_expire_minutes: int = 60 * 24

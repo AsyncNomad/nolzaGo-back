@@ -8,12 +8,21 @@ from app.db.session import init_models
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app_name, debug=settings.debug)
+    # Debug print to verify CORS/root_path settings at startup
+    print(f"[settings] root_path={settings.root_path} allowed_hosts={settings.allowed_hosts}")
+    app = FastAPI(
+        title=settings.app_name,
+        debug=settings.debug,
+        root_path=settings.root_path or "",
+        docs_url="/docs",
+        openapi_url="/openapi.json",
+    )
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.allowed_hosts,
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_origin_regex=".*",
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_async_db
+from app.api.deps import get_async_db, get_current_user
 from app.core.security import create_access_token, get_password_hash, verify_password
 from app.models.user import AuthProvider, User
 from app.schemas.auth import Token
@@ -67,6 +67,10 @@ async def kakao_login(payload: KakaoUserCreate, db: AsyncSession = Depends(get_a
     kakao_id = str(kakao_profile["id"])
     kakao_email = payload.email or kakao_profile.get("kakao_account", {}).get("email")
     kakao_nickname = payload.display_name or kakao_profile.get("properties", {}).get("nickname") or "놀자Go 사용자"
+    kakao_profile_image = (
+        kakao_profile.get("properties", {}).get("profile_image")
+        or kakao_profile.get("properties", {}).get("thumbnail_image")
+    )
 
     result = await db.execute(
         select(User).where(User.provider == AuthProvider.kakao, User.provider_account_id == kakao_id)
@@ -79,10 +83,21 @@ async def kakao_login(payload: KakaoUserCreate, db: AsyncSession = Depends(get_a
             provider=AuthProvider.kakao,
             provider_account_id=kakao_id,
             display_name=kakao_nickname,
+            profile_image_url=kakao_profile_image,
         )
         db.add(user)
         await db.commit()
         await db.refresh(user)
+    else:
+        if kakao_profile_image and user.profile_image_url != kakao_profile_image:
+            user.profile_image_url = kakao_profile_image
+            db.add(user)
+            await db.commit()
 
     token = create_access_token(str(user.id))
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=UserOut)
+async def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
