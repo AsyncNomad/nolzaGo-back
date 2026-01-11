@@ -3,7 +3,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", env_prefix="NOLZAGO_")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_prefix="NOLZAGO_",
+        extra="ignore",  # ignore non NOLZAGO_* vars like VITE_API_BASE_URL
+    )
 
     app_name: str = "nolzaGo"
     debug: bool = True

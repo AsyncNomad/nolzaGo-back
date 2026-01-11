@@ -12,8 +12,8 @@ from app.schemas.post import PostCreate, PostOut, PostUpdate
 router = APIRouter(prefix="/posts", tags=["posts"])
 
 
-@router.get("/", response_model=list[PostOut])
-async def list_posts(db: AsyncSession = Depends(get_async_db)):
+@router.get("", response_model=list[PostOut])
+async def list_posts(db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
     result = await db.execute(select(Post).options(selectinload(Post.participants), selectinload(Post.owner)))
     posts = result.scalars().unique().all()
     return [
@@ -38,7 +38,7 @@ async def list_posts(db: AsyncSession = Depends(get_async_db)):
     ]
 
 
-@router.post("/", response_model=PostOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PostOut, status_code=status.HTTP_201_CREATED)
 async def create_post(
     payload: PostCreate, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)
 ):
