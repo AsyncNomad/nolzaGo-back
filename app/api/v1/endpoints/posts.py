@@ -1,4 +1,5 @@
 from uuid import UUID
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, insert, delete
@@ -6,11 +7,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_async_db, get_current_user
+from app.core.config import get_settings
 from app.models.post import Post
 from app.schemas.post import PostCreate, PostOut, PostUpdate
 from app.models.associations import post_likes
 
 router = APIRouter(prefix="/posts", tags=["posts"])
+
+
+def _normalized_image_url(raw_url: str | None) -> str | None:
+    """
+    - If the URL has a (possibly expired) presign query, rebuild a plain object URL using current bucket/region.
+    - Otherwise return as-is.
+    """
+    if not raw_url:
+        return None
+    if "X-Amz-Signature" not in raw_url and "X-Amz-SignedHeaders" not in raw_url:
+        return raw_url
+
+    settings = get_settings()
+    if not all([settings.aws_bucket, settings.aws_region]):
+        return raw_url
+
+    parsed = urlparse(raw_url)
+    key = parsed.path.lstrip("/")
+    if not key:
+        return raw_url
+    return f"https://{settings.aws_bucket}.s3.{settings.aws_region}.amazonaws.com/{key}"
 
 
 def _to_out(post: Post, is_liked: bool = False) -> PostOut:
@@ -31,6 +54,7 @@ def _to_out(post: Post, is_liked: bool = False) -> PostOut:
         owner=post.owner,
         like_count=post.like_count,
         is_liked=is_liked,
+        image_url=_normalized_image_url(post.image_url),
     )
 
 
@@ -62,6 +86,7 @@ async def create_post(
         owner_id=current_user.id,
         like_count=payload.like_count or 0,
         status=payload.status or "모집 중",
+        image_url=payload.image_url,
     )
     db.add(post)
     await db.commit()

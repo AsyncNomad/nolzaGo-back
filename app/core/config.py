@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     kakao_rest_api_key: str | None = None
     kakao_map_rest_api_key: str | None = None
     gemini_api_key: str | None = None
+    aws_region: str | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    aws_bucket: str | None = None
 
 
 @lru_cache

@@ -20,6 +20,7 @@ class PostBase(BaseModel):
     start_time: datetime | None = None
     like_count: int = 0
     status: str = Field(default="모집 중", pattern="|".join(POST_STATUS_CHOICES))
+    image_url: str | None = None
 
 
 class PostCreate(PostBase):
@@ -36,6 +37,7 @@ class PostUpdate(BaseModel):
     start_time: datetime | None = None
     like_count: int | None = None
     status: str | None = Field(default=None, pattern="|".join(POST_STATUS_CHOICES))
+    image_url: str | None = None
 
 
 class PostOut(DBModelMixin):
@@ -53,3 +55,4 @@ class PostOut(DBModelMixin):
     owner: UserOut | None
     like_count: int
     is_liked: bool = False
+    image_url: str | None = None

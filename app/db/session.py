@@ -24,6 +24,12 @@ async def init_models() -> None:
             )
         except Exception as exc:  # pragma: no cover
             print(f"[init_models] alter posts.status skipped/failed: {exc}")
+        try:
+            await conn.execute(
+                text("ALTER TABLE posts ADD COLUMN IF NOT EXISTS image_url VARCHAR(500)")
+            )
+        except Exception as exc:  # pragma: no cover
+            print(f"[init_models] alter posts.image_url skipped/failed: {exc}")
 
 
 async def get_db():

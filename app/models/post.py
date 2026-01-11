@@ -28,6 +28,7 @@ class Post(Base):
     start_time: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     owner_id: Mapped[UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     owner: Mapped["User"] = relationship("User", back_populates="posts")
     participants: Mapped[List["User"]] = relationship(
