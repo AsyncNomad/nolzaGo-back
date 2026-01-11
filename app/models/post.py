@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.models.associations import post_participants
+from app.models.associations import post_likes, post_participants
 
 POST_STATUS_CHOICES = ("모집 중", "모집 마감", "놀이 진행 중", "종료")
 
@@ -37,4 +37,9 @@ class Post(Base):
     )
     messages: Mapped[List["ChatMessage"]] = relationship(
         "ChatMessage", back_populates="post", cascade="all, delete-orphan"
+    )
+    liked_users: Mapped[List["User"]] = relationship(
+        "User",
+        secondary=post_likes,
+        back_populates="liked_posts",
     )

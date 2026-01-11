@@ -39,3 +39,8 @@ class User(Base):
         secondary="post_participants",
         back_populates="participants",
     )
+    liked_posts: Mapped[List["Post"]] = relationship(
+        "Post",
+        secondary="post_likes",
+        back_populates="liked_users",
+    )

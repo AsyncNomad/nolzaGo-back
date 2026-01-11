@@ -16,7 +16,7 @@ class PostBase(BaseModel):
     location_name: str = Field(max_length=255)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    max_participants: int = Field(default=4, ge=2, le=50)
+    max_participants: int = Field(default=4, ge=2, le=100)
     start_time: datetime | None = None
     like_count: int = 0
     status: str = Field(default="모집 중", pattern="|".join(POST_STATUS_CHOICES))
@@ -32,7 +32,7 @@ class PostUpdate(BaseModel):
     location_name: str | None = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
-    max_participants: int | None = Field(default=None, ge=2, le=50)
+    max_participants: int | None = Field(default=None, ge=2, le=100)
     start_time: datetime | None = None
     like_count: int | None = None
     status: str | None = Field(default=None, pattern="|".join(POST_STATUS_CHOICES))
@@ -52,3 +52,4 @@ class PostOut(DBModelMixin):
     participants_count: int
     owner: UserOut | None
     like_count: int
+    is_liked: bool = False
