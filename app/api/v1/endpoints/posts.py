@@ -5,12 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, insert, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy import or_, distinct, join
 
 from app.api.deps import get_async_db, get_current_user
 from app.core.config import get_settings
 from app.models.post import Post
 from app.schemas.post import PostCreate, PostOut, PostUpdate
-from app.models.associations import post_likes
+from app.models.associations import post_likes, post_participants
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -66,6 +67,29 @@ async def list_posts(db: AsyncSession = Depends(get_async_db), current_user=Depe
     if posts:
         post_ids = [p.id for p in posts]
         liked_rows = await db.execute(select(post_likes.c.post_id).where(post_likes.c.user_id == current_user.id, post_likes.c.post_id.in_(post_ids)))
+        liked_ids = set(liked_rows.scalars().all())
+    return [_to_out(post, post.id in liked_ids) for post in posts]
+
+
+@router.get("/mine", response_model=list[PostOut])
+async def my_posts(db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
+    stmt = (
+        select(Post)
+        .outerjoin(post_participants, post_participants.c.post_id == Post.id)
+        .where(or_(Post.owner_id == current_user.id, post_participants.c.user_id == current_user.id))
+        .options(selectinload(Post.participants), selectinload(Post.owner))
+        .distinct()
+    )
+    result = await db.execute(stmt)
+    posts = result.scalars().unique().all()
+    liked_ids: set[UUID] = set()
+    if posts:
+        post_ids = [p.id for p in posts]
+        liked_rows = await db.execute(
+            select(post_likes.c.post_id).where(
+                post_likes.c.user_id == current_user.id, post_likes.c.post_id.in_(post_ids)
+            )
+        )
         liked_ids = set(liked_rows.scalars().all())
     return [_to_out(post, post.id in liked_ids) for post in posts]
 

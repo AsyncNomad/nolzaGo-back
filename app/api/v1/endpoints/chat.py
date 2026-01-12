@@ -1,6 +1,7 @@
 import json
 from typing import Dict, Set
 from uuid import UUID
+from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
@@ -62,6 +63,12 @@ async def list_messages(post_id: UUID, db: AsyncSession = Depends(get_async_db))
         select(ChatMessage).where(ChatMessage.post_id == post_id).options(selectinload(ChatMessage.user))
     )
     messages = result.scalars().all()
+    for m in messages:
+        if m.created_at and m.created_at.tzinfo is None:
+            m.created_at = m.created_at.replace(tzinfo=timezone.utc)
+        if m.user:
+            m.user_display_name = m.user.display_name
+            m.user_profile_image_url = m.user.profile_image_url
     return messages
 
 
@@ -78,6 +85,10 @@ async def create_message(
     db.add(message)
     await db.commit()
     await db.refresh(message)
+    if message.created_at and message.created_at.tzinfo is None:
+        message.created_at = message.created_at.replace(tzinfo=timezone.utc)
+    message.user_display_name = current_user.display_name
+    message.user_profile_image_url = current_user.profile_image_url
     return message
 
 
@@ -110,10 +121,15 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
                 db.add(message)
                 await db.commit()
                 await db.refresh(message)
+                created = message.created_at
+                if created and created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
                 payload = {
                     "userId": str(user_uuid),
+                    "userDisplayName": message.user.display_name if message.user else None,
+                    "userProfileImageUrl": message.user.profile_image_url if message.user else None,
                     "content": message.content,
-                    "createdAt": message.created_at.isoformat(),
+                    "createdAt": (created or message.created_at).isoformat(),
                 }
                 await manager.broadcast(post_id, payload)
         except WebSocketDisconnect:
