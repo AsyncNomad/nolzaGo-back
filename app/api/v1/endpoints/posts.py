@@ -2,14 +2,16 @@ from uuid import UUID
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, insert, delete
+from sqlalchemy import select, insert, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import or_, distinct, join
+from sqlalchemy import or_
 
 from app.api.deps import get_async_db, get_current_user
 from app.core.config import get_settings
 from app.models.post import Post
+from app.models.chat import ChatMessage
+from app.models.chat_read import ChatRead
 from app.schemas.post import PostCreate, PostOut, PostUpdate
 from app.models.associations import post_likes, post_participants
 
@@ -37,7 +39,12 @@ def _normalized_image_url(raw_url: str | None) -> str | None:
     return f"https://{settings.aws_bucket}.s3.{settings.aws_region}.amazonaws.com/{key}"
 
 
-def _to_out(post: Post, is_liked: bool = False) -> PostOut:
+def _to_out(post: Post, is_liked: bool = False, unread_count: int | None = None, last_message=None) -> PostOut:
+    last_msg_content = None
+    last_msg_at = None
+    if last_message:
+        last_msg_content = last_message.get("content")
+        last_msg_at = last_message.get("created_at")
     return PostOut(
         id=post.id,
         created_at=post.created_at,
@@ -56,6 +63,9 @@ def _to_out(post: Post, is_liked: bool = False) -> PostOut:
         like_count=post.like_count,
         is_liked=is_liked,
         image_url=_normalized_image_url(post.image_url),
+        unread_count=unread_count,
+        last_message=last_msg_content,
+        last_message_at=last_msg_at,
     )
 
 
@@ -64,11 +74,36 @@ async def list_posts(db: AsyncSession = Depends(get_async_db), current_user=Depe
     result = await db.execute(select(Post).options(selectinload(Post.participants), selectinload(Post.owner)))
     posts = result.scalars().unique().all()
     liked_ids: set[UUID] = set()
+    unread_map: dict[UUID, int] = {}
+    last_map: dict[UUID, dict] = {}
     if posts:
         post_ids = [p.id for p in posts]
         liked_rows = await db.execute(select(post_likes.c.post_id).where(post_likes.c.user_id == current_user.id, post_likes.c.post_id.in_(post_ids)))
         liked_ids = set(liked_rows.scalars().all())
-    return [_to_out(post, post.id in liked_ids) for post in posts]
+        read_rows = await db.execute(
+            select(ChatRead).where(ChatRead.user_id == current_user.id, ChatRead.post_id.in_(post_ids))
+        )
+        for row in read_rows.scalars().all():
+            unread_map[row.post_id] = row.unread_count
+        # latest message per post
+        subq = (
+            select(
+                ChatMessage.post_id,
+                ChatMessage.content,
+                ChatMessage.created_at,
+                func.row_number()
+                .over(partition_by=ChatMessage.post_id, order_by=ChatMessage.created_at.desc())
+                .label("rn"),
+            )
+            .where(ChatMessage.post_id.in_(post_ids))
+            .subquery()
+        )
+        latest_rows = await db.execute(
+            select(subq.c.post_id, subq.c.content, subq.c.created_at).where(subq.c.rn == 1)
+        )
+        for pid, content, created_at in latest_rows:
+            last_map[pid] = {"content": content, "created_at": created_at}
+    return [_to_out(post, post.id in liked_ids, unread_map.get(post.id), last_map.get(post.id)) for post in posts]
 
 
 @router.get("/mine", response_model=list[PostOut])
@@ -83,6 +118,8 @@ async def my_posts(db: AsyncSession = Depends(get_async_db), current_user=Depend
     result = await db.execute(stmt)
     posts = result.scalars().unique().all()
     liked_ids: set[UUID] = set()
+    unread_map: dict[UUID, int] = {}
+    last_map: dict[UUID, dict] = {}
     if posts:
         post_ids = [p.id for p in posts]
         liked_rows = await db.execute(
@@ -91,7 +128,29 @@ async def my_posts(db: AsyncSession = Depends(get_async_db), current_user=Depend
             )
         )
         liked_ids = set(liked_rows.scalars().all())
-    return [_to_out(post, post.id in liked_ids) for post in posts]
+        read_rows = await db.execute(
+            select(ChatRead).where(ChatRead.user_id == current_user.id, ChatRead.post_id.in_(post_ids))
+        )
+        for row in read_rows.scalars().all():
+            unread_map[row.post_id] = row.unread_count
+        subq = (
+            select(
+                ChatMessage.post_id,
+                ChatMessage.content,
+                ChatMessage.created_at,
+                func.row_number()
+                .over(partition_by=ChatMessage.post_id, order_by=ChatMessage.created_at.desc())
+                .label("rn"),
+            )
+            .where(ChatMessage.post_id.in_(post_ids))
+            .subquery()
+        )
+        latest_rows = await db.execute(
+            select(subq.c.post_id, subq.c.content, subq.c.created_at).where(subq.c.rn == 1)
+        )
+        for pid, content, created_at in latest_rows:
+            last_map[pid] = {"content": content, "created_at": created_at}
+    return [_to_out(post, post.id in liked_ids, unread_map.get(post.id), last_map.get(post.id)) for post in posts]
 
 
 @router.post("", response_model=PostOut, status_code=status.HTTP_201_CREATED)

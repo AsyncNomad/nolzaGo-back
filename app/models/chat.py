@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Text
+from sqlalchemy import DateTime, ForeignKey, Text, event
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -19,3 +19,15 @@ class ChatMessage(Base):
 
     post: Mapped["Post"] = relationship("Post", back_populates="messages")
     user: Mapped["User"] = relationship("User")
+
+
+@event.listens_for(ChatMessage, "before_insert")
+def _strip_tz_on_insert(mapper, connection, target: "ChatMessage"):
+    if target.created_at and target.created_at.tzinfo:
+        target.created_at = target.created_at.replace(tzinfo=None)
+
+
+@event.listens_for(ChatMessage, "before_update")
+def _strip_tz_on_update(mapper, connection, target: "ChatMessage"):
+    if target.created_at and target.created_at.tzinfo:
+        target.created_at = target.created_at.replace(tzinfo=None)

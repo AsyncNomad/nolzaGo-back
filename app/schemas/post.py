@@ -56,3 +56,6 @@ class PostOut(DBModelMixin):
     like_count: int
     is_liked: bool = False
     image_url: str | None = None
+    unread_count: int | None = None
+    last_message: str | None = None
+    last_message_at: datetime | None = None

@@ -12,6 +12,7 @@ from app.api.deps import get_async_db, get_current_user
 from app.core.security import decode_token
 from app.db.session import SessionLocal
 from app.models.chat import ChatMessage
+from app.models.chat_read import ChatRead
 from app.models.post import Post
 from app.schemas.chat import ChatMessageCreate, ChatMessageOut
 from app.services import get_gemini_summarizer
@@ -56,20 +57,72 @@ class ChatRoomManager:
 manager = ChatRoomManager()
 
 
+async def _ensure_read_row(db: AsyncSession, post_id: UUID, user_id: UUID) -> ChatRead:
+    res = await db.execute(select(ChatRead).where(ChatRead.post_id == post_id, ChatRead.user_id == user_id))
+    row = res.scalar_one_or_none()
+    if not row:
+        row = ChatRead(post_id=post_id, user_id=user_id, unread_count=0, last_read_at=None)
+        db.add(row)
+    return row
+
+
+async def _mark_read(db: AsyncSession, post_id: UUID, user_id: UUID, read_time=None):
+    row = await _ensure_read_row(db, post_id, user_id)
+    if read_time:
+        row.last_read_at = read_time.replace(tzinfo=None) if read_time.tzinfo else read_time
+    row.unread_count = 0
+    db.add(row)
+
+
+async def _bump_unread(db: AsyncSession, post: Post, sender_id: UUID, created_at):
+    user_ids = {sender_id, post.owner_id}
+    user_ids.update([p.id for p in post.participants])
+    ts = created_at.replace(tzinfo=None) if created_at and created_at.tzinfo else created_at
+    for uid in user_ids:
+        row = await _ensure_read_row(db, post.id, uid)
+        if uid == sender_id:
+            row.last_read_at = ts
+            row.unread_count = 0
+        else:
+            row.unread_count = (row.unread_count or 0) + 1
+        db.add(row)
+
+
+def _out_message(m: ChatMessage) -> ChatMessageOut:
+    created = m.created_at
+    if created and created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return ChatMessageOut(
+        id=m.id,
+        content=m.content,
+        post_id=m.post_id,
+        user_id=m.user_id,
+        user=m.user,
+        user_display_name=getattr(m.user, "display_name", None),
+        user_profile_image_url=getattr(m.user, "profile_image_url", None),
+        created_at=created,
+    )
+
+
 @router.get("/messages", response_model=list[ChatMessageOut])
-async def list_messages(post_id: UUID, db: AsyncSession = Depends(get_async_db)):
+async def list_messages(post_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
     await _get_post(db, post_id)
     result = await db.execute(
         select(ChatMessage).where(ChatMessage.post_id == post_id).options(selectinload(ChatMessage.user))
     )
     messages = result.scalars().all()
-    for m in messages:
-        if m.created_at and m.created_at.tzinfo is None:
-            m.created_at = m.created_at.replace(tzinfo=timezone.utc)
-        if m.user:
-            m.user_display_name = m.user.display_name
-            m.user_profile_image_url = m.user.profile_image_url
-    return messages
+    # mark as read
+    last_ts = messages[-1].created_at if messages else None
+    if last_ts and last_ts.tzinfo:
+        last_ts = last_ts.replace(tzinfo=None)
+    if current_user:
+        row = await _ensure_read_row(db, post_id, current_user.id)
+        if last_ts:
+            row.last_read_at = last_ts
+        row.unread_count = 0
+        db.add(row)
+        await db.commit()
+    return [_out_message(m) for m in messages]
 
 
 @router.post("/messages", response_model=ChatMessageOut, status_code=status.HTTP_201_CREATED)
@@ -85,11 +138,9 @@ async def create_message(
     db.add(message)
     await db.commit()
     await db.refresh(message)
-    if message.created_at and message.created_at.tzinfo is None:
-        message.created_at = message.created_at.replace(tzinfo=timezone.utc)
-    message.user_display_name = current_user.display_name
-    message.user_profile_image_url = current_user.profile_image_url
-    return message
+    await _bump_unread(db, post, current_user.id, message.created_at)
+    await db.commit()
+    return _out_message(message)
 
 
 @router.websocket("/ws")
@@ -121,6 +172,8 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
                 db.add(message)
                 await db.commit()
                 await db.refresh(message)
+                await _bump_unread(db, post, user_uuid, message.created_at)
+                await db.commit()
                 created = message.created_at
                 if created and created.tzinfo is None:
                     created = created.replace(tzinfo=timezone.utc)
