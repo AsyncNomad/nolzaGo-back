@@ -201,7 +201,9 @@ async def chat_summary(post_id: UUID, question: str | None = None, db: AsyncSess
     )
     messages = result.scalars().all()
     summarizer = get_gemini_summarizer()
-    summary = await summarizer.summarize([m.content for m in messages], question=question)
+    # 최신 메시지 80개까지만 취하되, 프롬프트는 시간 순서(오래된 → 최신)로 정렬
+    contents = list(reversed([m.content for m in messages][:80]))
+    summary = await summarizer.summarize(contents, question=question)
     return {
         "post_id": str(post.id),
         "summary": summary,

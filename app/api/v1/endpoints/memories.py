@@ -96,6 +96,20 @@ async def update_memory(
     return memory
 
 
+@router.delete("/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_memory(memory_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
+    result = await db.execute(select(MemoryPost).where(MemoryPost.id == memory_id))
+    memory = result.scalar_one_or_none()
+    if not memory:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory not found")
+    if memory.owner_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only author can delete this memory")
+
+    await db.delete(memory)
+    await db.commit()
+    return None
+
+
 @router.post("/{memory_id}/like", response_model=MemoryOut)
 async def like_memory(memory_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
     result = await db.execute(select(MemoryPost).where(MemoryPost.id == memory_id))
