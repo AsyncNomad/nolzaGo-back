@@ -47,6 +47,7 @@ def _to_out(post: Post, is_liked: bool = False, unread_count: int | None = None,
     if last_message:
         last_msg_content = last_message.get("content")
         last_msg_at = last_message.get("created_at")
+    participants_count = len(post.participants or []) + 1  # 작성자 포함
     return PostOut(
         id=post.id,
         created_at=post.created_at,
@@ -60,7 +61,7 @@ def _to_out(post: Post, is_liked: bool = False, unread_count: int | None = None,
         status=post.status,
         start_time=post.start_time,
         owner_id=post.owner_id,
-        participants_count=len(post.participants or []),
+        participants_count=participants_count,
         owner=post.owner,
         like_count=post.like_count,
         is_liked=is_liked,
@@ -119,7 +120,7 @@ async def list_posts(db: AsyncSession = Depends(get_async_db), current_user=Depe
             post.id in liked_ids,
             unread_map.get(post.id),
             last_map.get(post.id),
-        ).model_copy(update={"participants_count": count_map.get(post.id, len(post.participants or []))})
+        ).model_copy(update={"participants_count": count_map.get(post.id, len(post.participants or [])) + 1})
         for post in posts
     ]
 
@@ -182,7 +183,7 @@ async def my_posts(db: AsyncSession = Depends(get_async_db), current_user=Depend
             post.id in liked_ids,
             unread_map.get(post.id),
             last_map.get(post.id),
-        ).model_copy(update={"participants_count": count_map.get(post.id, len(post.participants or []))})
+        ).model_copy(update={"participants_count": count_map.get(post.id, len(post.participants or [])) + 1})
         for post in posts
     ]
 
@@ -236,23 +237,7 @@ async def leave_post(
     await db.commit()
     await db.refresh(post)
 
-    return PostOut(
-        id=post.id,
-        created_at=post.created_at,
-        title=post.title,
-        game_type=post.game_type,
-        description=post.description,
-        location_name=post.location_name,
-        latitude=post.latitude,
-        longitude=post.longitude,
-        max_participants=post.max_participants,
-        status=post.status,
-        start_time=post.start_time,
-        owner_id=post.owner_id,
-        participants_count=len(post.participants),
-        owner=post.owner,
-        like_count=post.like_count,
-    )
+    return _to_out(post, is_liked=False)
 
 @router.get("/{post_id}", response_model=PostOut)
 async def get_post(post_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
@@ -382,23 +367,7 @@ async def join_post(
     await db.commit()
     await db.refresh(post)
 
-    return PostOut(
-        id=post.id,
-        created_at=post.created_at,
-        title=post.title,
-        game_type=post.game_type,
-        description=post.description,
-        location_name=post.location_name,
-        latitude=post.latitude,
-        longitude=post.longitude,
-        max_participants=post.max_participants,
-        status=post.status,
-        start_time=post.start_time,
-        owner_id=post.owner_id,
-        participants_count=len(post.participants),
-        owner=post.owner,
-        like_count=post.like_count,
-    )
+    return _to_out(post, is_liked=not liked)
 
 
 @router.post("/{post_id}/like", response_model=PostOut)
