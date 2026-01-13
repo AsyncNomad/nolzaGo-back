@@ -76,6 +76,7 @@ async def list_posts(db: AsyncSession = Depends(get_async_db), current_user=Depe
     liked_ids: set[UUID] = set()
     unread_map: dict[UUID, int] = {}
     last_map: dict[UUID, dict] = {}
+    count_map: dict[UUID, int] = {}
     if posts:
         post_ids = [p.id for p in posts]
         liked_rows = await db.execute(select(post_likes.c.post_id).where(post_likes.c.user_id == current_user.id, post_likes.c.post_id.in_(post_ids)))
@@ -85,6 +86,13 @@ async def list_posts(db: AsyncSession = Depends(get_async_db), current_user=Depe
         )
         for row in read_rows.scalars().all():
             unread_map[row.post_id] = row.unread_count
+        counts = await db.execute(
+            select(post_participants.c.post_id, func.count().label("cnt"))
+            .where(post_participants.c.post_id.in_(post_ids))
+            .group_by(post_participants.c.post_id)
+        )
+        for pid, cnt in counts:
+            count_map[pid] = cnt
         # latest message per post
         subq = (
             select(
@@ -103,7 +111,15 @@ async def list_posts(db: AsyncSession = Depends(get_async_db), current_user=Depe
         )
         for pid, content, created_at in latest_rows:
             last_map[pid] = {"content": content, "created_at": created_at}
-    return [_to_out(post, post.id in liked_ids, unread_map.get(post.id), last_map.get(post.id)) for post in posts]
+    return [
+        _to_out(
+            post,
+            post.id in liked_ids,
+            unread_map.get(post.id),
+            last_map.get(post.id),
+        ).model_copy(update={"participants_count": count_map.get(post.id, len(post.participants or []))})
+        for post in posts
+    ]
 
 
 @router.get("/mine", response_model=list[PostOut])
@@ -120,6 +136,7 @@ async def my_posts(db: AsyncSession = Depends(get_async_db), current_user=Depend
     liked_ids: set[UUID] = set()
     unread_map: dict[UUID, int] = {}
     last_map: dict[UUID, dict] = {}
+    count_map: dict[UUID, int] = {}
     if posts:
         post_ids = [p.id for p in posts]
         liked_rows = await db.execute(
@@ -133,6 +150,13 @@ async def my_posts(db: AsyncSession = Depends(get_async_db), current_user=Depend
         )
         for row in read_rows.scalars().all():
             unread_map[row.post_id] = row.unread_count
+        counts = await db.execute(
+            select(post_participants.c.post_id, func.count().label("cnt"))
+            .where(post_participants.c.post_id.in_(post_ids))
+            .group_by(post_participants.c.post_id)
+        )
+        for pid, cnt in counts:
+            count_map[pid] = cnt
         subq = (
             select(
                 ChatMessage.post_id,
@@ -150,7 +174,15 @@ async def my_posts(db: AsyncSession = Depends(get_async_db), current_user=Depend
         )
         for pid, content, created_at in latest_rows:
             last_map[pid] = {"content": content, "created_at": created_at}
-    return [_to_out(post, post.id in liked_ids, unread_map.get(post.id), last_map.get(post.id)) for post in posts]
+    return [
+        _to_out(
+            post,
+            post.id in liked_ids,
+            unread_map.get(post.id),
+            last_map.get(post.id),
+        ).model_copy(update={"participants_count": count_map.get(post.id, len(post.participants or []))})
+        for post in posts
+    ]
 
 
 @router.post("", response_model=PostOut, status_code=status.HTTP_201_CREATED)

@@ -14,6 +14,7 @@ from app.db.session import SessionLocal
 from app.models.chat import ChatMessage
 from app.models.chat_read import ChatRead
 from app.models.post import Post
+from app.models.user import User
 from app.schemas.chat import ChatMessageCreate, ChatMessageOut
 from app.services import get_gemini_summarizer
 
@@ -166,6 +167,12 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
             return
         await _ensure_membership(db, post, user_uuid)
 
+        # 미리 사용자 정보 로드해 lazy-load를 피한다.
+        user_row = await db.execute(select(User).where(User.id == user_uuid))
+        user_obj = user_row.scalar_one_or_none()
+        user_display_name = user_obj.display_name if user_obj else None
+        user_profile_image_url = user_obj.profile_image_url if user_obj else None
+
         await manager.connect(post_id, websocket)
 
         try:
@@ -182,8 +189,8 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
                     created = created.replace(tzinfo=timezone.utc)
                 payload = {
                     "userId": str(user_uuid),
-                    "userDisplayName": message.user.display_name if message.user else None,
-                    "userProfileImageUrl": message.user.profile_image_url if message.user else None,
+                    "userDisplayName": user_display_name,
+                    "userProfileImageUrl": user_profile_image_url,
                     "content": message.content,
                     "createdAt": (created or message.created_at).isoformat(),
                 }
