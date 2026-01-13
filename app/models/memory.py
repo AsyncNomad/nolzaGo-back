@@ -21,6 +21,12 @@ class MemoryPost(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     like_count: Mapped[int] = mapped_column(Integer, default=0)
     owner_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    origin_post_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("posts.id", ondelete="SET NULL"), nullable=True
+    )
+    origin_post_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    origin_post_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     owner: Mapped["User"] = relationship("User")
+    origin_post: Mapped["Post"] = relationship("Post", foreign_keys=[origin_post_id])

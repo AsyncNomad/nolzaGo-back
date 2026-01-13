@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_async_db, get_current_user
 from app.core.config import get_settings
 from app.models.memory import MemoryPost
+from app.models.post import Post
 from app.schemas.memory import MemoryCreate, MemoryOut, MemoryUpdate
 
 router = APIRouter(prefix="/memories", tags=["memories"])
@@ -48,6 +49,18 @@ async def list_memories(db: AsyncSession = Depends(get_async_db)):
 async def create_memory(
     payload: MemoryCreate, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)
 ):
+    origin_post_title = None
+    origin_post_status = None
+    if payload.origin_post_id:
+        post_res = await db.execute(select(Post).where(Post.id == payload.origin_post_id))
+        post = post_res.scalar_one_or_none()
+        if not post:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+        if (post.status or "").strip() != "종료":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="종료된 모집글만 선택할 수 있습니다.")
+        origin_post_title = post.title
+        origin_post_status = post.status
+
     memory = MemoryPost(
         title=payload.title,
         content=payload.content,
@@ -56,6 +69,9 @@ async def create_memory(
         latitude=payload.latitude,
         longitude=payload.longitude,
         owner_id=current_user.id,
+        origin_post_id=payload.origin_post_id,
+        origin_post_title=origin_post_title,
+        origin_post_status=origin_post_status,
     )
     db.add(memory)
     await db.commit()
@@ -88,7 +104,25 @@ async def update_memory(
     if memory.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only author can edit this memory")
 
-    for field, value in payload.dict(exclude_unset=True).items():
+    data = payload.dict(exclude_unset=True)
+    if "origin_post_id" in data:
+        if data["origin_post_id"]:
+            post_res = await db.execute(select(Post).where(Post.id == data["origin_post_id"]))
+            post = post_res.scalar_one_or_none()
+            if not post:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Post not found")
+            if (post.status or "").strip() != "종료":
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="종료된 모집글만 선택할 수 있습니다.")
+            memory.origin_post_id = data["origin_post_id"]
+            memory.origin_post_title = post.title
+            memory.origin_post_status = post.status
+        else:
+            memory.origin_post_id = None
+            memory.origin_post_title = None
+            memory.origin_post_status = None
+        data.pop("origin_post_id")
+
+    for field, value in data.items():
         setattr(memory, field, value)
 
     await db.commit()

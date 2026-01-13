@@ -14,6 +14,7 @@ class MemoryBase(BaseModel):
     location_name: str | None = Field(default=None, max_length=255)
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    origin_post_id: UUID | None = None
 
 
 class MemoryCreate(MemoryBase):
@@ -27,6 +28,7 @@ class MemoryUpdate(BaseModel):
     location_name: str | None = None
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
+    origin_post_id: UUID | None = None
 
 
 class MemoryOut(DBModelMixin):
@@ -40,5 +42,8 @@ class MemoryOut(DBModelMixin):
     owner_id: UUID
     owner: UserOut | None
     created_at: datetime | None = None
+    origin_post_id: UUID | None = None
+    origin_post_title: str | None = None
+    origin_post_status: str | None = None
 
     model_config = {"from_attributes": True}
