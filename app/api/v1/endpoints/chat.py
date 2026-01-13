@@ -108,7 +108,10 @@ def _out_message(m: ChatMessage) -> ChatMessageOut:
 async def list_messages(post_id: UUID, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)):
     await _get_post(db, post_id)
     result = await db.execute(
-        select(ChatMessage).where(ChatMessage.post_id == post_id).options(selectinload(ChatMessage.user))
+        select(ChatMessage)
+        .where(ChatMessage.post_id == post_id)
+        .options(selectinload(ChatMessage.user))
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
     )
     messages = result.scalars().all()
     # mark as read
