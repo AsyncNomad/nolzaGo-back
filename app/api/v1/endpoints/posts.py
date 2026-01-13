@@ -1,5 +1,6 @@
 from uuid import UUID
 from urllib.parse import urlparse
+from datetime import timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, insert, delete, func
@@ -14,6 +15,7 @@ from app.models.chat import ChatMessage
 from app.models.chat_read import ChatRead
 from app.schemas.post import PostCreate, PostOut, PostUpdate
 from app.models.associations import post_likes, post_participants
+from app.api.v1.endpoints.chat import manager, _bump_unread
 
 router = APIRouter(prefix="/posts", tags=["posts"])
 
@@ -289,11 +291,60 @@ async def update_post(
     if post.owner_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only author can edit this post")
 
+    # 변경 전 값 보존
+    prev_start = post.start_time
+    prev_location = post.location_name
+
     for field, value in payload.dict(exclude_unset=True).items():
         setattr(post, field, value)
 
     await db.commit()
     await db.refresh(post)
+
+    # 날짜/장소 변경 시 안내 메시지를 채팅에 자동 기록
+    changed_fields = []
+    if prev_start != post.start_time:
+        changed_fields.append(
+            (
+                "일정",
+                prev_start.strftime("%Y-%m-%d %H:%M") if prev_start else "미정",
+                post.start_time.strftime("%Y-%m-%d %H:%M") if post.start_time else "미정",
+            )
+        )
+    if prev_location != post.location_name:
+        changed_fields.append(
+            (
+                "장소",
+                prev_location or "미정",
+                post.location_name or "미정",
+            )
+        )
+    if changed_fields:
+        lines = []
+        for label, before, after in changed_fields:
+            particle = "를" if label == "장소" else "을"
+            lines.append(f"작성자가 {label}{particle} 변경했어요.")
+            lines.append(f"변경 전: {before}")
+            lines.append(f"변경 후: {after}")
+        notice_content = "\n".join(lines)
+        notice_msg = ChatMessage(content=notice_content, post_id=post.id, user_id=current_user.id)
+        db.add(notice_msg)
+        await db.commit()
+        await db.refresh(notice_msg)
+        await _bump_unread(db, post, current_user.id, notice_msg.created_at)
+        await db.commit()
+        created = notice_msg.created_at
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        payload = {
+            "userId": str(current_user.id),
+            "userDisplayName": getattr(current_user, "display_name", None),
+            "userProfileImageUrl": getattr(current_user, "profile_image_url", None),
+            "content": notice_msg.content,
+            "createdAt": (created or notice_msg.created_at).isoformat(),
+        }
+        await manager.broadcast(post.id, payload)
+
     return _to_out(post, is_liked=False)
 
 
