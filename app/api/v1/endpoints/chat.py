@@ -1,7 +1,7 @@
 import json
 from typing import Dict, Set
 from uuid import UUID
-from datetime import timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
@@ -39,6 +39,8 @@ async def _ensure_membership(db: AsyncSession, post: Post, user_id: UUID) -> Non
 class ChatRoomManager:
     def __init__(self):
         self.active_connections: Dict[UUID, Set[WebSocket]] = {}
+        self.join_announced: Dict[tuple[UUID, UUID], bool] = {}  # (post_id, user_id) -> announced
+        self.system_messages: Dict[UUID, list[dict]] = {}  # post_id -> list of system messages
 
     async def connect(self, post_id: UUID, websocket: WebSocket):
         await websocket.accept()
@@ -53,6 +55,12 @@ class ChatRoomManager:
     async def broadcast(self, post_id: UUID, message: dict):
         for connection in self.active_connections.get(post_id, set()):
             await connection.send_text(json.dumps(message))
+
+    def add_system_message(self, post_id: UUID, message: dict):
+        self.system_messages.setdefault(post_id, []).append(message)
+
+    def get_system_messages(self, post_id: UUID) -> list[dict]:
+        return self.system_messages.get(post_id, [])
 
 
 manager = ChatRoomManager()
@@ -173,7 +181,54 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
         user_display_name = user_obj.display_name if user_obj else None
         user_profile_image_url = user_obj.profile_image_url if user_obj else None
 
+        # 입장 시 기존 메시지 전달
+        history_q = (
+            select(ChatMessage)
+            .where(ChatMessage.post_id == post_id)
+            .options(selectinload(ChatMessage.user))
+            .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+        )
+        history_res = await db.execute(history_q)
+        history_msgs = []
+        for msg in history_res.scalars().all():
+            created = msg.created_at
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            history_msgs.append(
+                {
+                    "userId": str(msg.user_id),
+                    "userDisplayName": getattr(msg.user, "display_name", None),
+                    "userProfileImageUrl": getattr(msg.user, "profile_image_url", None),
+                    "content": msg.content,
+                    "createdAt": (created or msg.created_at).isoformat(),
+                }
+            )
+
+        # 저장된 시스템 메시지를 함께 병합해 시간 순으로 정렬
+        sys_msgs = manager.get_system_messages(post_id)
+        # system 메시지에는 system 플래그를 명시해 프론트에서 구분 가능하게 한다.
+        merged_msgs = history_msgs + [dict(m, system=True, type="system") for m in sys_msgs]
+        merged_msgs.sort(key=lambda m: m.get("createdAt", ""))
+
         await manager.connect(post_id, websocket)
+        # 히스토리를 먼저 전송
+        if merged_msgs:
+            await websocket.send_text(json.dumps({"type": "history", "messages": merged_msgs}))
+        # 입장 알림
+        join_key = (post_id, user_uuid)
+        if not manager.join_announced.get(join_key):
+            manager.join_announced[join_key] = True
+            now_iso = datetime.now(timezone.utc).isoformat()
+            join_notice = {
+                "type": "system",
+                "content": f"{user_display_name or '참여자'}님이 입장하셨습니다",
+                "createdAt": now_iso,
+                "userId": None,
+                "userDisplayName": None,
+                "userProfileImageUrl": None,
+            }
+            manager.add_system_message(post_id, join_notice)
+            await manager.broadcast(post_id, join_notice)
 
         try:
             while True:
