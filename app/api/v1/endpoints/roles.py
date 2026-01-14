@@ -148,6 +148,8 @@ async def toggle_capture(
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(get_current_user),
 ):
+    if isinstance(payload, dict):
+        payload = CaptureRequest(**payload)
     # 경찰만 토글 가능
     res_role = await db.execute(
         select(RoleAssignment).where(
@@ -179,9 +181,9 @@ async def toggle_capture(
         if payload.captured
         else f"{u.display_name or '참여자'}님이 경찰로부터 풀려났어요."
     )
-    payload = {"type": "system", "content": content, "createdAt": now.isoformat()}
-    await manager.broadcast((post_id, "police"), payload)
-    await manager.broadcast((post_id, "thief"), payload)
+    broadcast_msg = {"type": "system", "content": content, "createdAt": now.isoformat()}
+    await manager.broadcast((post_id, "police"), broadcast_msg)
+    await manager.broadcast((post_id, "thief"), broadcast_msg)
 
     # 모든 도둑이 잡힌 경우 Game Over 안내
     if payload.captured:
