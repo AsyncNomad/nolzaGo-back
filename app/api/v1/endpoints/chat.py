@@ -56,12 +56,6 @@ class ChatRoomManager:
         for connection in self.active_connections.get(post_id, set()):
             await connection.send_text(json.dumps(message))
 
-    def add_system_message(self, post_id: UUID, message: dict):
-        self.system_messages.setdefault(post_id, []).append(message)
-
-    def get_system_messages(self, post_id: UUID) -> list[dict]:
-        return self.system_messages.get(post_id, [])
-
 
 manager = ChatRoomManager()
 
@@ -180,6 +174,18 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
         user_obj = user_row.scalar_one_or_none()
         user_display_name = user_obj.display_name if user_obj else None
         user_profile_image_url = user_obj.profile_image_url if user_obj else None
+        # 이미 입장 안내가 저장돼 있는지 확인(재접속 시 중복 방지)
+        existing_join = await db.execute(
+            select(ChatMessage)
+            .where(
+                ChatMessage.post_id == post_id,
+                ChatMessage.user_id == user_uuid,
+                ChatMessage.content.ilike('%입장하셨습니다%'),
+            )
+            .order_by(ChatMessage.created_at.asc())
+        )
+        if existing_join.scalar_one_or_none():
+            manager.join_announced[(post_id, user_uuid)] = True
 
         # 입장 시 기존 메시지 전달
         history_q = (
@@ -194,20 +200,20 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
             created = msg.created_at
             if created and created.tzinfo is None:
                 created = created.replace(tzinfo=timezone.utc)
+            is_system = "입장하셨습니다" in (msg.content or "")
             history_msgs.append(
                 {
-                    "userId": str(msg.user_id),
-                    "userDisplayName": getattr(msg.user, "display_name", None),
-                    "userProfileImageUrl": getattr(msg.user, "profile_image_url", None),
+                    "userId": None if is_system else str(msg.user_id),
+                    "userDisplayName": None if is_system else getattr(msg.user, "display_name", None),
+                    "userProfileImageUrl": None if is_system else getattr(msg.user, "profile_image_url", None),
                     "content": msg.content,
                     "createdAt": (created or msg.created_at).isoformat(),
+                    "system": is_system,
+                    "type": "system" if is_system else "chat",
                 }
             )
 
-        # 저장된 시스템 메시지를 함께 병합해 시간 순으로 정렬
-        sys_msgs = manager.get_system_messages(post_id)
-        # system 메시지에는 system 플래그를 명시해 프론트에서 구분 가능하게 한다.
-        merged_msgs = history_msgs + [dict(m, system=True, type="system") for m in sys_msgs]
+        merged_msgs = history_msgs
         merged_msgs.sort(key=lambda m: m.get("createdAt", ""))
 
         await manager.connect(post_id, websocket)
@@ -227,7 +233,16 @@ async def websocket_chat(websocket: WebSocket, post_id: UUID):
                 "userDisplayName": None,
                 "userProfileImageUrl": None,
             }
-            manager.add_system_message(post_id, join_notice)
+            # DB에 기록해 재접속해도 동일 위치에 남도록 함
+            db_join = ChatMessage(content=join_notice["content"], post_id=post.id, user_id=user_uuid)
+            db.add(db_join)
+            await db.commit()
+            await db.refresh(db_join)
+            created_join = db_join.created_at
+            if created_join and created_join.tzinfo is None:
+                created_join = created_join.replace(tzinfo=timezone.utc)
+            join_notice["createdAt"] = (created_join or db_join.created_at).isoformat()
+            # 새 입장 알림 브로드캐스트
             await manager.broadcast(post_id, join_notice)
 
         try:
